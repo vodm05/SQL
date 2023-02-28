@@ -1,0 +1,112 @@
+/* slouží ke sledování vývoje, např. u funkce SUM(total_amt_usd) vidím, jak postupně navyšovali částky*/
+
+SELECT standard_amt_usd, occurred_at,
+SUM(standard_amt_usd) OVER (ORDER BY occurred_at) AS running_total
+FROM orders
+ 
+SELECT standard_amt_usd,
+DATE_TRUNC('year', occurred_at),
+SUM(standard_amt_usd) OVER (PARTITION BY DATE_TRUNC('year', occurred_at) ORDER BY occurred_at) AS running_total
+FROM orders
+
+/*zde to lehce obměněné, datum jsme očesali na rok, takže uvidíme, jak to postupně nabíhalo v jednotlivých letech*/
+
+POUŽITÍ funkcí OVER a PARTITION
+
+SELECT o.id, o.account_id, o.total,
+RANK() OVER (PARTITION BY o.account_id ORDER BY o.total DESC) AS total_rank
+FROM orders o
+
+/* chci vědět, jak velké byly objednávky jednotlivých klientů a následně je seřadím podle jejich velikosti
+PARTITION BY -> říká, ať vezmu velikosti objednávek vztahující se k o.account_id, 
+ORDER BY -> říká, aby se ty částky za sebou seřadili polde jejich velikosti*/
+
+RANK () - vemze podle PARTITION BY a přiřadí "hodnost", pokud jsou pro danou hodnost např. 2 řádky, tak to vypadá následovně:
+ 1. řádkek = rank 1,
+ 2. a 3. řádek spolu = pro každý rank 2,
+ 4. řádek = rank 4
+ DENSE_RANK() = ten funguje stejně s výjimkou toho, že nepřeskakuje RANKy
+  1. řádkek = rank 1,
+ 2. a 3. řádek spolu = pro každý rank 2,
+ 4. řádek = rank 3 ****tady je ten rozdíl
+
+SELECT id,
+       account_id,
+       standard_qty,
+       DATE_TRUNC('month', occurred_at) AS month,
+       DENSE_RANK() OVER (PARTITION BY account_id ) AS dense_rank,
+       SUM(standard_qty) OVER (PARTITION BY account_id ) AS sum_std_qty,
+       COUNT(standard_qty) OVER (PARTITION BY account_id ) AS count_std_qty,
+       AVG(standard_qty) OVER (PARTITION BY account_id ) AS avg_std_qty,
+       MIN(standard_qty) OVER (PARTITION BY account_id ) AS min_std_qty,
+       MAX(standard_qty) OVER (PARTITION BY account_id ) AS max_std_qty
+FROM orders
+
+
+********takto se dá zvýšit přehlednost kódu
+
+SELECT id,
+       account_id,
+       DATE_TRUNC('year',occurred_at) AS year,
+       DENSE_RANK() OVER alias_window AS dense_rank,
+       total_amt_usd,
+       SUM(total_amt_usd) OVER alias_window AS sum_total_amt_usd,
+       COUNT(total_amt_usd) OVER alias_window AS count_total_amt_usd,
+       AVG(total_amt_usd) OVER alias_window AS avg_total_amt_usd,
+       MIN(total_amt_usd) OVER alias_window AS min_total_amt_usd,
+       MAX(total_amt_usd) OVER alias_window AS max_total_amt_usd
+FROM orders
+WINDOW alias_window AS (PARTITION BY account_id ORDER BY DATE_TRUNC('year',occurred_at))
+
+-> do WINDOW se vloží částí po OVER, uloží se do proměnné a na ní se odkáže zpět v queru
+
+***** FUNKCE LEAD a LAG slouží k vytovření nového sloupce, ve kterém jsou hodnoty o řádek níže, tím tyto sloupce můžeme od sebe odečíst.
+
+SELECT
+oc, total_sum_individual,
+LEAD(total_sum_individual) OVER (ORDER BY oc),
+LEAD(total_sum_individual) OVER (ORDER BY oc) - total_sum_individual AS total_difference,
+LAG(total_sum_individual) OVER (ORDER BY oc)
+FROM (
+SELECT
+occurred_at oc, SUM(total_amt_usd) total_sum_individual
+FROM orders
+GROUP BY 1
+) sub
+
+
+LAG začne až od druhého řádku, LEAD od prvního.
+
+******* PERCENTILY apod.
+
+NTILE(4) OVER (ORDER BY xxx) as xxx -> kvartily
+NTILE(5) -> kvantily
+NTILE(100) -> percentil 
+
+ORDER BY určuje sloupec, na který se použije STATEMENT 
+
+SELECT
+NTILE(4) OVER (PARTITION BY account_id ORDER BY standard_qty),
+account_id, occurred_at, standard_qty
+FROM orders
+
+/*rozdělení velikostí objednávek do dvou skupin pod a nad 0,5 kvantil*/
+
+PARTITION BY - dá dohromady např. všechny account_id
+ORDER BY - seřadí podle velikosti jejich objednávek u account_id, který předsatvuje id klienta
+
+
+SELECT
+NTILE(2) OVER (PARTITION BY account_id ORDER BY gloss_qty),
+SUM(gloss_qty) OVER (PARTITION BY account_id ORDER BY gloss_qty) postupne,
+account_id, occurred_at, gloss_qty
+FROM orders
+
+/* podobný kód předešlému, sledujeme gloss_qty, doplnil jsem sám SUM(gloss_qty) WINDOW function*/
+
+SELECT
+NTILE(100) OVER (PARTITION BY account_id ORDER BY total_amt_usd) total_percentile,
+account_id, occurred_at, total_amt_usd
+FROM orders
+
+/* seřazení objednávek dle account_id, které jsou následně rozděleny do "skupin" percentilu dle všech objednávek*/

@@ -1,0 +1,114 @@
+Viz. SQL.docx dokument k vysvtlení/připomenutí JOINů
+
+SELECT s.name, a.id 
+FROM sales_reps s
+FULL OUTER JOIN accounts a
+ON s.id = a.sales_rep_id
+
+WHERE accounts.sales_rep_id IS NULL OR sales_reps.id IS NULL
+/*pokud budeme chtít vygenerovat pouze NULL řádky z oborou dataframeů*/
+
+SELECT accounts.name as account_name,
+       accounts.primary_poc as poc_name,
+       sales_reps.name as sales_rep_name
+  FROM accounts
+  LEFT JOIN sales_reps
+    ON accounts.sales_rep_id = sales_reps.id
+   AND accounts.primary_poc < sales_reps.name
+
+   /* propojení tabulek*/
+
+
+SELECT o1.id AS o1_id,
+       o1.account_id AS o1_account_id,
+       o1.occurred_at AS o1_occurred_at,
+       o2.id AS o2_id,
+       o2.account_id AS o2_account_id,
+       o2.occurred_at AS o2_occurred_at
+  FROM orders o1
+ LEFT JOIN orders o2
+   ON o1.account_id = o2.account_id
+  AND o2.occurred_at > o1.occurred_at
+  AND o2.occurred_at <= o1.occurred_at + INTERVAL '28 days'
+ORDER BY o1.account_id, o1.occurred_at
+
+/*napojení tabulky na sebe samotnou, vidíme účty, které měli více eventů*/
+
+SELECT we1.id AS we_id,
+       we1.account_id AS we1_account_id,
+       we1.occurred_at AS we1_occurred_at,
+       we1.channel AS we1_channel,
+       we2.id AS we2_id,
+       we2.account_id AS we2_account_id,
+       we2.occurred_at AS we2_occurred_at,
+       we2.channel AS we2_channel
+  FROM web_events we1 
+ LEFT JOIN web_events we2
+   ON we1.account_id = we2.account_id
+  AND we1.occurred_at > we2.occurred_at
+  AND we1.occurred_at <= we2.occurred_at + INTERVAL '1 day'
+ORDER BY we1.account_id, we2.occurred_at
+
+/* vidím i kanály k těmto id-éčkám*/
+
+****** UNION
+
+UNION 
+
+    Stejný počet sloupců v obou tabulkách 
+
+    Sloupce tabulek musí mít ve stejném pořadí stejný datatype 
+
+UNION odstraní duplicitní hondoty ve druhé tabulce 
+
+UNION ALL použije i duplicitní 
+
+SELECT *
+FROM accounts
+
+UNION ALL
+
+SELECT *
+FROM accounts
+
+-> mám tam každou hodnotu duplicitně
+
+/*SELECT *
+FROM accounts
+WHERE name IN ('Walmart')
+
+UNION ALL
+
+SELECT *
+FROM accounts
+WHERE name IN ('Disney')*/
+
+/*vyberu řádky, ve kterých je jenom Walamrt a Disney*/
+
+SELECT *
+FROM accounts
+WHERE name IN ('Disney') OR name = ('Walmart')
+
+/alternativně lze napsat takto*/
+
+WITH double_accounts AS 
+(SELECT *
+FROM accounts
+
+UNION ALL
+
+SELECT *
+FROM accounts)
+
+SELECT COUNT(name), name
+FROM double_accounts
+GROUP BY 2
+
+/*Zde je vidět, že každé jméno je zde 2x zastoupeno... UNION ALL duplikuje hodnoty*/
+
+EXPLAIN
+SELECT...
+
+/*ukáže přehled, v jakém pořadí bude který úkon vykonán i s dlékou výkonu, můžeme modifikovat časově náročné úkony.*/
+
+ 

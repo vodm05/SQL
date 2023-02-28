@@ -1,0 +1,252 @@
+Lesson_4_subqueries
+******* sub-query
+1. základní quer
+2. ten se dá do závorek a za něj se napíše alisas - obvykle sub
+3. SELECT, obvykle *. abych vzal vše z vnitřního queru, FROM se chápe jako vnitřní quer, může se i dopsat WHERE a pak inner query
+4. ORDER BY,GROUP BY se píše až pod inner quer
+
+SELECT channel, AVG(num_events)
+FROM
+(SELECT COUNT(*) num_events, DATE_TRUNC('day',occurred_at) AS den, channel
+FROM web_events
+GROUP BY 2, 3
+ORDER BY 1 DESC
+) sub
+GROUP BY channel
+/* získám průměrný počet eventů na den*/
+
+SELECT AVG(standard_qty) avg_std, AVG(gloss_qty) avg_gls, AVG(poster_qty) avg_pst
+FROM orders
+WHERE DATE_TRUNC('month', occurred_at) = 
+     (SELECT DATE_TRUNC('month', MIN(occurred_at)) FROM orders);
+
+SELECT SUM(total_amt_usd)
+FROM orders
+WHERE DATE_TRUNC('month', occurred_at) = 
+      (SELECT DATE_TRUNC('month', MIN(occurred_at)) FROM orders);
+
+/*Inner vyčistí data až do měsíce a vezme z nich minimum... získám nejstarší(první) první objednávku.
+Outer query počítá průměr gloss, poster, standard v rámci vyčištěných dat na měsíce a odkazuje to na inner query
+-> z toho plyne, že všechny našlé hodnoty se súží na měsíc a rok nejstarší(první) objednávky.
+-> druhý outer query hledá sumu v dolarech a analogicky postupuje dál.*/
+
+ SELECT t3.rep_name, t3.region_name, t3.total_amt
+ FROM
+ (SELECT region_name, MAX(total_amt) total_amt
+       FROM(SELECT s.name rep_name, r.name region_name, SUM(o.total_amt_usd) total_amt
+               FROM sales_reps s
+               JOIN accounts a
+               ON a.sales_rep_id = s.id
+               JOIN orders o
+               ON o.account_id = a.id
+               JOIN region r
+               ON r.id = s.region_id
+               GROUP BY 1, 2
+               ORDER BY 3) t1
+  GROUP BY 1) t2
+ JOIN (SELECT s.name rep_name, r.name region_name, SUM(o.total_amt_usd) total_amt
+               FROM sales_reps s
+               JOIN accounts a
+               ON a.sales_rep_id = s.id
+               JOIN orders o
+               ON o.account_id = a.id
+               JOIN region r
+               ON r.id = s.region_id
+               GROUP BY 1, 2
+               ORDER BY 3) t3
+ON t3.region_name = t2.region_name AND t3.total_amt = t2.total_amt
+ 
+ /* hledám nejlepší sales_rep každého regionu
+ t1 -> spojí tabulky, vytáhnu všechny sales s příslušními regiony a jejich součet tržeb
+ t2 -> vytáhnu pouze region a maximální hodnotu, NEMOHU přidat i sales_rep, protože bych opkakoval činnost t1 a vyšlo by mi to samé. Jinými slovy, teď musím najít jméno nejefektivnějšího prodávajícího s daními podminkami (region + max částka)
+t3 -> kombinace JOIN a SUBQUERY
+napojím úplně stejný quer do joinové části, udělám z něj subquer a teď to důležité
+ON musí se rovnat total_amt, jednou je to SUM a podruhé MAX, tím vyhledám maximální hodnotu a především, je to znak, podle kterého spojím tabulky (vytvoření FK - foreign key)
+ON musí dále mít region name z obou taublek t2 a t3, mohlo by se stát, že najdu v jednomu regionu člověka se stejnou částkou jako v jiném a propsal by se. Proto je užitá spojk AND mezi total_amt a region_name.*/
+
+SELECT COUNT(*) 
+FROM
+(SELECT a.name 
+FROM accounts a
+JOIN orders o
+ON a.id = o.account_id
+GROUP BY 1
+    HAVING SUM(o.total) > (SELECT total_pur
+    FROM
+    (SELECT a.name ac_name, SUM(standard_qty) stand_qty, SUM(total) total_pur 
+    FROM accounts a
+    JOIN orders o 
+    ON o.account_id = a.id
+    GROUP BY 1
+    ORDER BY 2 DESC
+    LIMIT 1) inner_tab)
+) outter_tab;
+
+/*hledání počtu zákazníků, kteří mělí větší objednávky než zákazník, který objendal nevjíce standardího papíru*/
+
+  SELECT t1.region_name, SUM(t1.total_amt) total_amt, t1.count_orders count_orders 
+  FROM 
+    (SELECT  r.name region_name, COUNT(*) count_orders, SUM(o.total_amt_usd) total_amt
+    FROM orders o
+    JOIN accounts a
+    ON a.id = o.account_id
+    JOIN sales_reps s
+    ON s.id = a.sales_rep_id
+    JOIN region r
+    ON r.id = region_id
+    GROUP BY 1) t1
+  GROUP BY 1, 3
+
+/*najít region s nejvyššími tržbami, kolik má objednávek
+sice z tohoto kód nevyleze jedna kolonka, ale jelikož mám 4 regiony, tak na první pohled poznám*/
+
+SELECT a.name, w.channel, COUNT(*)
+FROM accounts a
+JOIN web_events w 
+ON w.account_id = a.id AND a.id = (SELECT id FROM
+(SELECT a.id, a.name, SUM(o.total_amt_usd) total_spending
+FROM orders o
+JOIN accounts a
+ON o.account_id = a.id 
+GROUP BY 1, 2
+ORDER BY 3 DESC
+LIMIT 1) x)
+GROUP BY 1, 2
+ORDER BY 3 DESC;
+
+/*x subquery najde zákazníka s největším součtem objednávek spojí přes ID. Poté se vytovří počítání těchto hodnot*/
+
+SELECT ac_name, AVG(total_amount), total_amount
+FROM
+(SELECT a.name ac_name, SUM(o.total_amt_usd) total_amount
+FROM orders o
+JOIN accounts a
+ON o.account_id = a.id
+GROUP BY 1
+ORDER BY 2 DESC
+LIMIT 10) inner_query
+GROUP BY 1, 3
+ORDER BY 2
+/* 10 největších objednavatelů a jejich průměr*/
+
+SELECT AVG(individual_average)
+FROM
+(SELECT a.name, AVG(total_amt_usd) individual_average 
+FROM orders o
+JOIN accounts a
+ON a.id = o.account_id
+GROUP BY 1
+HAVING AVG(total_amt_usd) >(SELECT AVG(total_amt_usd) overall_average
+FROM orders)) inner_query;
+
+/* hodnota průměrné objednávky počítána z objednávek firem, které objednávají v průměru více než je průměr celého portfolia zákazníku a jejich objednávek */
+
+************ WITH statement
+/*WITH -> používá se k zvýšení přehlednosti kódu v rámci SUBQUERY
+1. inner query: WITH events AS (kód inner queru), events = alias daného inner queru, alias se nepíše na konci tohoto queru, to se dělá u subquery
+2. outter quer SELECT.. FROM events, pak může být zkratka WGHOL.*/
+
+WITH s1 AS (SELECT s.name sales_name, r.name region_name, SUM(total_amt_usd) total_sum
+FROM region r
+JOIN sales_reps s
+ON r.id = s.region_id
+JOIN accounts a
+ON s.id = a.sales_rep_id
+JOIN orders o
+ON o.account_id = a.id
+GROUP BY 1, 2),
+
+s2 AS (
+SELECT region_name, MAX(total_sum) total_sum
+FROM s1
+GROUP BY 1)
+
+SELECT s1.region_name, s1.sales_name, s1.total_sum
+FROM s1
+JOIN s2
+ON s1.region_name = s2.region_name AND s1.total_sum = s2.total_sum
+
+/* nejlepší sales za jednotlivé regiony*/
+
+SELECT r.name region_name, SUM(total_amt_usd) total_amt, COUNT(o.id) count_orders 
+FROM orders o
+JOIN accounts a
+ON o.account_id = a.id
+JOIN sales_reps s
+ON a.sales_rep_id = s.id
+JOIN region r
+ON r.id = s.region_id
+GROUP BY 1
+ORDER BY 2 DESC
+LIMIT 1
+
+/*region s největšími tržbami a jeho počtem objednávek, nebylo ani třeba subqueries či WITH statementu*/
+
+WITH s1 AS (SELECT a.name ac_name, SUM(standard_qty) total_qty, SUM(o.total) total
+FROM orders o
+JOIN accounts a
+ON o.account_id = a.id
+GROUP BY 1
+ORDER BY 2 DESC
+LIMIT 1),
+s2 AS (
+SELECT a.name
+FROM orders o
+JOIN accounts a
+ON a.id = o.account_id
+GROUP BY 1
+HAVING SUM(o.total) > (SELECT total FROM s1)
+)
+SELECT COUNT(*)
+FROM s2;
+
+/* hledání počtu firem, z kteřých plyne větší tržby než z firmy, která objednává nejvíce standardního papíru*/
+/* POZOR na část v HAVINGU a odkazování na s1 -> SELECT total FROM s1)
+
+WITH s1 AS (SELECT a.name, SUM(total_amt_usd) total, a.id ajdy
+FROM accounts a
+JOIN orders o
+ON o.account_id = a.id
+GROUP BY 1, 3
+ORDER BY 2 DESC
+LIMIT 1)
+SELECT a.name, w.channel, COUNT(w.channel)
+FROM web_events w
+JOIN accounts a
+ON w.account_id = a.id
+JOIN s1
+ON s1.ajdy = a.id
+GROUP BY 1, 2
+
+/* Počet kanálů užitých na klienta, z kterého plynou nejvyšší tržby*/
+
+WITH s1 as (SELECT a.id, SUM(o.total_amt_usd) total
+FROM orders o
+JOIN accounts a
+ON a.id = o.account_id
+GROUP BY 1
+ORDER BY 2 DESC
+LIMIT 10)
+SELECT AVG(total)
+FROM s1
+
+/* průměr z 10 účtu, které přinášejí sumu nejvyšších tržeb*/
+
+WITH s1 AS (SELECT AVG(o.total_amt_usd) overall_average
+FROM orders o),
+s2 AS (
+SELECT o.account_id, AVG(o.total_amt_usd) group_average
+FROM orders o
+GROUP BY 1
+HAVING AVG(o.total_amt_usd) > (SELECT overall_average FROM s1))
+SELECT AVG(group_average)
+FROM s2
+
+/* průměrná tržba klientů, kteří platí průměrně více než průměrní klienti*/
+
+
+
+
+
+
+
